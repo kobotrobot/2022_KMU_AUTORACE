@@ -122,7 +122,21 @@ def start():
     if lines is not None:
         pt1 = (lines[0][0][0], lines[0][0][1])
         pt2 = (lines[0][0][2], lines[0][0][3])
-        cv2.HoughLinesP(image, pt1, pt2, ((0, 0, 255), 3, cv2.LINE_AA))
+        cv2.line(image, pt1, pt2, ((0, 0, 255), 3, cv2.LINE_AA))
+
+    # cv2.LINE_AA 뭔지 모름
+    cv2.line(image, (240, 0), (640, 480), (0, 255, 0), 2, cv2.LINE_AA)
+    # 좌표 그리기
+    cv2.circle(image, (120, 240), (460, 240), 5, (0, 255, 255), -1)
+
+    # left gradient 그리기
+    left_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+    n1 = float(lines[0][0][1] - (left_grad * lines[0][0][0]))
+    # right gradient 그리기
+    right_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+    n2 = float(lines[0][0][1] - (right_grad * lines[0][0][0]))
+
+
 
 
 
@@ -142,6 +156,7 @@ def start():
 
     # 우선 테스트를 위해 직진(0값)으로 설정
     angle = 0
+
     # =========================================
     # 차량의 속도 값인 speed값 정하기.
     # 직선 코스에서는 빠른 속도로 주행하고
