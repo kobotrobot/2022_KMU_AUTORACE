@@ -6,10 +6,10 @@
 # =============================================
 import numpy as np
 import cv2, math
-# import rospy, rospkg, time
-# from sensor_msgs.msg import Image
-# from cv_bridge import CvBridge
-# from xycar_msgs.msg import xycar_motor
+import rospy, rospkg, time
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+from xycar_msgs.msg import xycar_motor
 from math import *
 import signal
 import sys
@@ -34,7 +34,7 @@ signal.signal(signal.SIGINT, signal_handler)
 # 프로그램에서 사용할 변수, 저장공간 선언부
 # =============================================
 image = np.empty(shape=[0])  # 카메라 이미지를 담을 변수
-# bridge = CvBridge()
+bridge = CvBridge()
 motor = None  # 모터 토픽을 담을 변수
 
 # =============================================
@@ -43,7 +43,6 @@ motor = None  # 모터 토픽을 담을 변수
 CAM_FPS = 30  # 카메라 FPS - 초당 30장의 사진을 보냄
 WIDTH, HEIGHT = 640, 480  # 카메라 이미지 가로x세로 크기
 
-
 # =============================================
 # 콜백함수 - 카메라 토픽을 처리하는 콜백함수
 # 카메라 이미지 토픽이 도착하면 자동으로 호출되는 함수
@@ -51,8 +50,7 @@ WIDTH, HEIGHT = 640, 480  # 카메라 이미지 가로x세로 크기
 # =============================================
 def img_callback(data):
     global image
-    # image = bridge.imgmsg_to_cv2(data, "bgr8")
-
+    image = bridge.imgmsg_to_cv2(data, "bgr8")
 
 # =============================================
 # 모터 토픽을 발행하는 함수
@@ -62,13 +60,11 @@ def img_callback(data):
 def drive(angle, speed):
     global motor
 
-    # motor_msg = xycar_motor()
-    # motor_msg.angle = angle
-    # motor_msg.speed = speed
-    #
-    # motor.publish(motor_msg)
+    motor_msg = xycar_motor()
+    motor_msg.angle = angle
+    motor_msg.speed = speed
 
-
+    motor.publish(motor_msg)
 # =============================================
 # 실질적인 메인 함수
 # 카메라 토픽을 받아 각종 영상처리와 알고리즘을 통해
@@ -83,9 +79,9 @@ def start():
     # ROS 노드를 생성하고 초기화 함.
     # 카메라 토픽을 구독하고 모터 토픽을 발행할 것임을 선언
     # =========================================
-    # rospy.init_node('driving')
-    # motor = rospy.Publisher('xycar_motor', xycar_motor, queue_size=1)
-    # image_sub = rospy.Subscriber("/usb_cam/image_raw/", Image, img_callback)
+    rospy.init_node('driving')
+    motor = rospy.Publisher('xycar_motor', xycar_motor, queue_size=1)
+    image_sub = rospy.Subscriber("/usb_cam/image_raw/", Image, img_callback)
 
     print("----- Xycar self driving -----")
 
@@ -99,76 +95,74 @@ def start():
     # "이미지처리 +차선위치찾기 +조향각결정 +모터토픽발행"
     # 작업을 반복적으로 수행함.
     # =========================================
-    # while not rospy.is_shutdown():
-    # 이미지처리를 위해 카메라 원본이미지를 img에 복사 저장
-    img = image.copy()
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    whiteLower = (200, 200, 200)
-    whiteUpper = (255, 255, 255)
-    mask = cv2.inRange(img_rgb, whiteLower, whiteUpper)
-    img2 = cv2.bitwise_and(img_rgb, img_rgb, mask=mask)
-    gray_img = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    blur_img = cv2.GaussianBlur(gray_img, (3,3), 0)
-    dst = cv2.Canny(blur_img, 50, 200)
+    while not rospy.is_shutdown():
+        # 이미지처리를 위해 카메라 원본이미지를 img에 복사 저장
+        img = image.copy()
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        whiteLower = (200, 200, 200)
+        whiteUpper = (255, 255, 255)
+        mask = cv2.inRange(img_rgb, whiteLower, whiteUpper)
+        img2 = cv2.bitwise_and(img_rgb, img_rgb, mask=mask)
+        gray_img = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        blur_img = cv2.GaussianBlur(gray_img, (3,3), 0)
+        dst = cv2.Canny(blur_img, 50, 200)
 
-    # 다각형 roi 지정
-    img = np.zeros(640, 480, 3, np.uint8)
-    pt = np.array([[120, 240], [480, 0], [360, 240], [640, 480]])
-    cv2.fillConvexPoly(img, pt, (255, 0, 0))
-    roi = cv2.bitwise_and(dst, img)
+        # 다각형 roi 지정
+        img = np.zeros(640, 480, 3, np.uint8)
+        pt = np.array([[120, 240], [480, 0], [360, 240], [640, 480]])
+        cv2.fillConvexPoly(img, pt, (255, 0, 0))
+        roi = cv2.bitwise_and(dst, img)
 
-    # Hough 변환(직선 검출)
-    lines = cv2.HoughLinesP(roi, 1.0, np.pi / 180, 50, minLineLength=1, maxLineGap=1000)
-    if lines is not None:
-        pt1 = (lines[0][0][0], lines[0][0][1])
-        pt2 = (lines[0][0][2], lines[0][0][3])
-        cv2.line(image, pt1, pt2, ((0, 0, 255), 3, cv2.LINE_AA))
+        # Hough 변환(직선 검출)
+        lines = cv2.HoughLinesP(roi, 1.0, np.pi / 180, 50, minLineLength=1, maxLineGap=1000)
+        if lines is not None:
+            pt1 = (lines[0][0][0], lines[0][0][1])
+            pt2 = (lines[0][0][2], lines[0][0][3])
+            cv2.line(image, pt1, pt2, ((0, 0, 255), 3, cv2.LINE_AA))
 
-    # cv2.LINE_AA 뭔지 모름
-    cv2.line(image, (240, 0), (640, 480), (0, 255, 0), 2, cv2.LINE_AA)
-    # 좌표 그리기
-    cv2.circle(image, (120, 240), (460, 240), 5, (0, 255, 255), -1)
+        # cv2.LINE_AA 뭔지 모름
+        cv2.line(image, (240, 0), (640, 480), (0, 255, 0), 2, cv2.LINE_AA)
+        # 좌표 그리기
+        cv2.circle(image, (120, 240), (460, 240), 5, (0, 255, 255), -1)
 
-    # left gradient 그리기
-    left_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
-    n1 = float(lines[0][0][1] - (left_grad * lines[0][0][0]))
-    # right gradient 그리기
-    right_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
-    n2 = float(lines[0][0][1] - (right_grad * lines[0][0][0]))
+        # 가운데 구하기
 
+        # 조향각 구하기(-50-~ +50)
+        # left gradient 그리기
+        left_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+        # n1 = float(lines[0][0][1] - (left_grad * lines[0][0][0]))
+        # right gradient 그리기
+        right_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+        # n2 = float(lines[0][0][1] - (right_grad * lines[0][0][0]))
 
+        if left_grad > -0.68 and left_grad < -0.58:
+            return 0
+        else:
+            return ((left_grad + right_grad) * (-40))
 
+        # 디버깅을 위해 모니터에 이미지를 디스플레이
+        cv2.imshow("CAM View", img)
+        cv2.waitKey(1)
 
+        # =========================================
+        # 핸들조향각 값인 angle값 정하기.
+        # 차선의 위치 정보를 이용해서 angle값을 설정함.
+        # =========================================
 
+        # 우선 테스트를 위해 직진(0값)으로 설정
+        angle = 0
 
+        # =========================================
+        # 차량의 속도 값인 speed값 정하기.
+        # 직선 코스에서는 빠른 속도로 주행하고
+        # 회전구간에서는 느린 속도로 주행하도록 설정함.
+        # =========================================
 
+        # 우선 테스트를 위해 느린속도(10값)로 설정
+        speed = 10
 
-
-
-    # 디버깅을 위해 모니터에 이미지를 디스플레이
-    cv2.imshow("CAM View", img)
-    cv2.waitKey(1)
-
-    # =========================================
-    # 핸들조향각 값인 angle값 정하기.
-    # 차선의 위치 정보를 이용해서 angle값을 설정함.
-    # =========================================
-
-    # 우선 테스트를 위해 직진(0값)으로 설정
-    angle = 0
-
-    # =========================================
-    # 차량의 속도 값인 speed값 정하기.
-    # 직선 코스에서는 빠른 속도로 주행하고
-    # 회전구간에서는 느린 속도로 주행하도록 설정함.
-    # =========================================
-
-    # 우선 테스트를 위해 느린속도(10값)로 설정
-    speed = 10
-
-    # drive() 호출. drive()함수 안에서 모터 토픽이 발행됨.
-    drive(angle, speed)
-
+        # drive() 호출. drive()함수 안에서 모터 토픽이 발행됨.
+        drive(angle, speed)
 
 # =============================================
 # 메인 함수
