@@ -42,6 +42,8 @@ motor = None  # 모터 토픽을 담을 변수
 # =============================================
 CAM_FPS = 30  # 카메라 FPS - 초당 30장의 사진을 보냄
 WIDTH, HEIGHT = 640, 480  # 카메라 이미지 가로x세로 크기
+global left_grad, right_grad, count
+count = 0
 
 # =============================================
 # 콜백함수 - 카메라 토픽을 처리하는 콜백함수
@@ -65,6 +67,14 @@ def drive(angle, speed):
     motor_msg.speed = speed
 
     motor.publish(motor_msg)
+
+def angle():
+    global left_grad, right_grad
+    if left_grad > -0.68 and left_grad < -0.58:
+        return 0
+    else:
+        return (left_grad + right_grad) * (-40)
+
 # =============================================
 # 실질적인 메인 함수
 # 카메라 토픽을 받아 각종 영상처리와 알고리즘을 통해
@@ -73,7 +83,7 @@ def drive(angle, speed):
 # =============================================
 def start():
     # 위에서 선언한 변수를 start() 안에서 사용하고자 함
-    global motor, image
+    global motor, image, left_grad, right_grad
 
     # =========================================
     # ROS 노드를 생성하고 초기화 함.
@@ -95,6 +105,7 @@ def start():
     # "이미지처리 +차선위치찾기 +조향각결정 +모터토픽발행"
     # 작업을 반복적으로 수행함.
     # =========================================
+    tmp = []
     while not rospy.is_shutdown():
         # 이미지처리를 위해 카메라 원본이미지를 img에 복사 저장
         img = image.copy()
@@ -106,43 +117,66 @@ def start():
         gray_img = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
         blur_img = cv2.GaussianBlur(gray_img, (3,3), 0)
         dst = cv2.Canny(blur_img, 50, 200)
+        print(dst.shape)
+        cv2.imshow('canny', dst)
 
         # 다각형 roi 지정
-        img = np.zeros(640, 480, 3, np.uint8)
-        pt = np.array([[120, 240], [480, 0], [360, 240], [640, 480]])
+        img = np.zeros((480, 640), np.uint8) #height, width
+        print(img.shape)
+        pt = np.array([[45, 360], [0, 430], [640, 430], [595, 360]])
         cv2.fillConvexPoly(img, pt, (255, 0, 0))
+        print(img.shape)
         roi = cv2.bitwise_and(dst, img)
+        print(roi.shape)
 
         # Hough 변환(직선 검출)
-        lines = cv2.HoughLinesP(roi, 1.0, np.pi / 180, 50, minLineLength=1, maxLineGap=1000)
+        
+        lines = cv2.HoughLinesP(roi, 1.0, np.pi / 180, 50, minLineLength=50, maxLineGap=500)
+        tmp.append(lines)
+        print(tmp)
+        print("------")
+        print(type(lines))
+        print(lines)
+        
         if lines is not None:
+            print(lines)
             pt1 = (lines[0][0][0], lines[0][0][1])
             pt2 = (lines[0][0][2], lines[0][0][3])
-            cv2.line(image, pt1, pt2, ((0, 0, 255), 3, cv2.LINE_AA))
+            cv2.line(image, pt1, pt2, (0, 0, 255), 2, cv2.LINE_AA)
+        elif lines is None:
+            lines = tmp[-2]
+            #pt1 = (lines[0][0][0], lines[0][0][1])
+            # pt2 = (lines[0][0][2], lines[0][0][3])
+            #cv2.line(image, pt1, pt2, (0, 0, 255), 2, cv2.LINE_AA)
+        else: 
+            print("fail")
 
         # cv2.LINE_AA 뭔지 모름
-        cv2.line(image, (240, 0), (640, 480), (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.line(image, (0, 360), (640, 360), (0, 255, 0), 1, cv2.LINE_4)
+	#print(2)
         # 좌표 그리기
-        cv2.circle(image, (120, 240), (460, 240), 5, (0, 255, 255), -1)
+        cv2.circle(image, (105, 360), 5, (0, 255, 255), -1)
+        cv2.circle(image, (535, 360), 5, (0, 255, 255), -1)
+	#print(3)
 
         # 가운데 구하기
 
         # 조향각 구하기(-50-~ +50)
-        # left gradient 그리기
-        left_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
-        # n1 = float(lines[0][0][1] - (left_grad * lines[0][0][0]))
-        # right gradient 그리기
-        right_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+         # left gradient 그리기
+        gradient = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+        if gradient < 0:
+             left_grad = gradient 
+        #left_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+             print(left_grad)
+        ele: gradient > 0:
+             right_grad = gradient
+             print(right_grad)
+       
+        #right gradient 그리기
+        # right_grad = float((lines[0][0][1] - lines[0][0][3])) / float((lines[0][0][0] - lines[0][0][2]))
+        
         # n2 = float(lines[0][0][1] - (right_grad * lines[0][0][0]))
 
-        if left_grad > -0.68 and left_grad < -0.58:
-            return 0
-        else:
-            return ((left_grad + right_grad) * (-40))
-
-        # 디버깅을 위해 모니터에 이미지를 디스플레이
-        cv2.imshow("CAM View", img)
-        cv2.waitKey(1)
 
         # =========================================
         # 핸들조향각 값인 angle값 정하기.
@@ -150,7 +184,8 @@ def start():
         # =========================================
 
         # 우선 테스트를 위해 직진(0값)으로 설정
-        angle = 0
+        # angle = 0
+        # print(angle())
 
         # =========================================
         # 차량의 속도 값인 speed값 정하기.
@@ -159,10 +194,15 @@ def start():
         # =========================================
 
         # 우선 테스트를 위해 느린속도(10값)로 설정
-        speed = 10
+        speed = 20
+        # 디버깅을 위해 모니터에 이미지를 디스플레이
+        cv2.imshow("CAM View", img)
+        cv2.imshow("roi", roi)
+        cv2.imshow('+', image)
+        cv2.waitKey(1)
 
         # drive() 호출. drive()함수 안에서 모터 토픽이 발행됨.
-        drive(angle, speed)
+        drive(angle(), speed)
 
 # =============================================
 # 메인 함수
@@ -171,4 +211,3 @@ def start():
 # =============================================
 if __name__ == '__main__':
     start()
-
